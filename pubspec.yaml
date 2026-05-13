@@ -28,6 +28,8 @@ dependencies:
   latlong2: ^0.9.1
   google_generative_ai: ^0.4.3
   firebase_storage: ^13.3.0
+  http: ^1.1.0
+
 
 dev_dependencies:
   flutter_test:
