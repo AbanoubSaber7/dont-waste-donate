@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../theme/app_theme.dart';
 import '../../data/models/charity.dart';
 import '../../data/repositories/charity_repository.dart';
+import '../../data/services/places_service.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -17,29 +17,36 @@ class _SearchScreenState extends State<SearchScreen> {
   // موقع افتراضي (مثلاً القاهرة)
   static const LatLng _initialPosition = LatLng(30.0444, 31.2357);
 
-  late MapController mapController;
-  LatLng _currentPos = const LatLng(30.0444, 31.2357); // القاهرة كافتراضي
+  GoogleMapController? _mapController;
+  LatLng _currentPos = _initialPosition;
   bool _isLoadingLoc = true;
   String _selectedFilter = "All";
 
   final CharityRepository _charityRepo = CharityRepository();
-  List<Charity> _allCharities = [];
-  List<Marker> _markers = [];
+  final PlacesService _placesService = PlacesService();
+  
+  List<Charity> _firestoreCharities = [];
+  List<Charity> _nearbyCharities = [];
+  Set<Marker> _markers = {};
 
   @override
   void initState() {
     super.initState();
-    mapController = MapController();
-    _loadCharities();
-    _determinePosition();
+    _loadAllData();
   }
 
-  Future<void> _loadCharities() async {
+  Future<void> _loadAllData() async {
+    await _determinePosition();
+    await _loadFirestoreCharities();
+    await _fetchNearbyCharities();
+  }
+
+  Future<void> _loadFirestoreCharities() async {
     try {
       final charities = await _charityRepo.getCharities();
       if (!mounted) return;
       setState(() {
-        _allCharities = charities;
+        _firestoreCharities = charities;
         _updateMarkers();
       });
     } catch (e) {
@@ -47,22 +54,50 @@ class _SearchScreenState extends State<SearchScreen> {
     }
   }
 
+  Future<void> _fetchNearbyCharities() async {
+    try {
+      final nearby = await _placesService.getNearbyCharities(_currentPos.latitude, _currentPos.longitude);
+      if (!mounted) return;
+      setState(() {
+        _nearbyCharities = nearby;
+        _updateMarkers();
+      });
+    } catch (e) {
+      print("Error fetching nearby charities: $e");
+    }
+  }
+
   void _updateMarkers() {
+    final List<Charity> allCharities = [..._firestoreCharities, ..._nearbyCharities];
+    
     setState(() {
-      _markers = _allCharities.where((c) {
+      _markers = allCharities.where((c) {
         if (_selectedFilter == "All") return true;
+        if (c.category == "Nearby") return true; // Always show nearby search results
         return c.category == _selectedFilter;
       }).map((c) {
         return Marker(
-          point: LatLng(c.latitude, c.longitude),
-          width: 80,
-          height: 80,
-          child: Tooltip(
-            message: c.name,
-            child: const Icon(Icons.location_on, color: Colors.red, size: 30),
+          markerId: MarkerId(c.id),
+          position: LatLng(c.latitude, c.longitude),
+          infoWindow: InfoWindow(
+            title: c.name,
+            snippet: c.description,
+          ),
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            c.category == "Nearby" ? BitmapDescriptor.hueAzure : BitmapDescriptor.hueRed,
           ),
         );
-      }).toList();
+      }).toSet();
+
+      // Add user location marker
+      _markers.add(
+        Marker(
+          markerId: const MarkerId('myLocation'),
+          position: _currentPos,
+          infoWindow: const InfoWindow(title: 'My Location'),
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+        ),
+      );
     });
   }
 
@@ -93,7 +128,8 @@ class _SearchScreenState extends State<SearchScreen> {
       _currentPos = LatLng(position.latitude, position.longitude);
       _isLoadingLoc = false;
     });
-    mapController.move(_currentPos, 14.0);
+    
+    _mapController?.animateCamera(CameraUpdate.newLatLngZoom(_currentPos, 14.0));
   }
 
   @override
@@ -109,7 +145,7 @@ class _SearchScreenState extends State<SearchScreen> {
             // --- الجزء العلوي: العنوان ---
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 20, horizontal: 20),
-              child: const Text(
+              child: Text(
                 "Find causes that\nmatter to you",
                 textAlign: TextAlign.center,
                 style: TextStyle(
@@ -150,22 +186,22 @@ class _SearchScreenState extends State<SearchScreen> {
                           children: [
                             ClipRRect(
                               borderRadius: BorderRadius.circular(25),
-                              child: FlutterMap(
-                                mapController: mapController,
-                                options: MapOptions(
-                                  initialCenter: _currentPos,
-                                  initialZoom: 13.0,
+                              child: GoogleMap(
+                                initialCameraPosition: CameraPosition(
+                                  target: _currentPos,
+                                  zoom: 13.0,
                                 ),
-                                children: [
-                                  TileLayer(
-                                    urlTemplate: "https://{s}.tile.jawg.io/jawg-sunny/{z}/{x}/{y}{r}.png?access-token={accessToken}",
-                                    additionalOptions: const {
-                                      'accessToken': 's9Z5tR6QVGGXtBFvFFbTaPGCAcwGrE6UJn3ZVPeezWpDpAd2IWJltsJCGAHLrkAB',
-                                    },
-                                    subdomains: const ['a', 'b', 'c'],
-                                  ),
-                                  MarkerLayer(markers: _getFilteredMarkers()),
-                                ],
+                                onMapCreated: (controller) {
+                                  _mapController = controller;
+                                  if (!_isLoadingLoc) {
+                                    _mapController?.animateCamera(CameraUpdate.newLatLngZoom(_currentPos, 14.0));
+                                  }
+                                },
+                                markers: _markers,
+                                myLocationEnabled: true,
+                                myLocationButtonEnabled: false,
+                                zoomControlsEnabled: false,
+                                mapToolbarEnabled: false,
                               ),
                             ),
                             if (_isLoadingLoc)
@@ -257,10 +293,6 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  List<Marker> _getFilteredMarkers() {
-    return _markers;
-  }
-
   Widget _buildSectionHeader(String title) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 10),
@@ -298,13 +330,20 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   void _onChipTapped(String item) {
+    final List<Charity> allCharities = [..._firestoreCharities, ..._nearbyCharities];
+    if (allCharities.isEmpty) return;
+    
     LatLng targetLocation;
     switch (item) {
       case "Education":
-        targetLocation = _markers[0].point;
+        targetLocation = LatLng(allCharities[0].latitude, allCharities[0].longitude);
         break;
       case "Food Bank":
-        targetLocation = _markers[1].point;
+        if (allCharities.length > 1) {
+          targetLocation = LatLng(allCharities[1].latitude, allCharities[1].longitude);
+        } else {
+          targetLocation = _initialPosition;
+        }
         break;
       case "Children":
         targetLocation = const LatLng(30.0333, 31.2333); // موقع آخر في القاهرة
@@ -312,13 +351,15 @@ class _SearchScreenState extends State<SearchScreen> {
       default:
         targetLocation = _initialPosition;
     }
-    mapController.move(targetLocation, 15.0); // تحريك الخريطة إلى الموقع مع zoom
+    _mapController?.animateCamera(CameraUpdate.newLatLngZoom(targetLocation, 15.0));
   }
 
   Widget _buildSuggestionList() {
+    final List<Charity> allCharities = [..._firestoreCharities, ..._nearbyCharities];
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: _allCharities.take(3).map((charity) {
+      children: allCharities.take(5).map((charity) {
         final distance = Geolocator.distanceBetween(
           _currentPos.latitude,
           _currentPos.longitude,
@@ -340,10 +381,10 @@ class _SearchScreenState extends State<SearchScreen> {
               child: const Icon(Icons.location_on_outlined, color: AppTheme.brown),
             ),
             title: Text(charity.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, fontFamily: 'Cairo')),
-            subtitle: Text("Cairo • ${distance.toStringAsFixed(1)} km away", style: const TextStyle(fontSize: 13, color: AppTheme.textGrey)),
+            subtitle: Text("${charity.description.split(',').first} • ${distance.toStringAsFixed(1)} km away", style: const TextStyle(fontSize: 13, color: AppTheme.textGrey)),
             trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: AppTheme.textGrey),
             onTap: () {
-              mapController.move(LatLng(charity.latitude, charity.longitude), 15.0);
+              _mapController?.animateCamera(CameraUpdate.newLatLngZoom(LatLng(charity.latitude, charity.longitude), 15.0));
             },
           ),
         );

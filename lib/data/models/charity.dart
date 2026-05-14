@@ -32,4 +32,16 @@ class Charity {
       imageUrl: data['imageUrl'] ?? '',
     );
   }
+
+  factory Charity.fromGooglePlaces(Map<String, dynamic> json) {
+    return Charity(
+      id: json['place_id'] ?? '',
+      name: json['name'] ?? '',
+      description: json['vicinity'] ?? '',
+      category: 'Nearby',
+      latitude: json['geometry']['location']['lat'],
+      longitude: json['geometry']['location']['lng'],
+      imageUrl: '', // Places API photos require extra requests
+    );
+  }
 }

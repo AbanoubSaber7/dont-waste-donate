@@ -132,53 +132,84 @@ class AddDonationScreen extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          "Item Photo",
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textBlack),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              "Item Photo",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textBlack),
+            ),
+            if (image != null && !isAnalyzing)
+              TextButton.icon(
+                onPressed: () => _pickImage(ref),
+                icon: const Icon(Icons.refresh, size: 18, color: AppTheme.brown),
+                label: const Text("Change", style: TextStyle(color: AppTheme.brown, fontWeight: FontWeight.bold)),
+              ),
+          ],
         ),
         const SizedBox(height: 12),
-        GestureDetector(
-          onTap: isAnalyzing ? null : () => _pickImage(ref),
-          child: Container(
-            width: double.infinity,
-            height: 180,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(25),
-              border: Border.all(color: AppTheme.brown.withOpacity(0.2), width: 2),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.02),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
+        Stack(
+          children: [
+            GestureDetector(
+              onTap: isAnalyzing ? null : () => _pickImage(ref),
+              child: Container(
+                width: double.infinity,
+                height: 180,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(25),
+                  border: Border.all(color: AppTheme.brown.withOpacity(0.2), width: 2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.02),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            child: isAnalyzing
-                ? const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircularProgressIndicator(color: AppTheme.brown),
-                  SizedBox(height: 12),
-                  Text("AI is analyzing item condition...", style: TextStyle(color: AppTheme.brown, fontSize: 14, fontWeight: FontWeight.w600)),
-                ],
+                child: isAnalyzing
+                    ? const Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircularProgressIndicator(color: AppTheme.brown),
+                      SizedBox(height: 12),
+                      Text("AI is analyzing item condition...", style: TextStyle(color: AppTheme.brown, fontSize: 14, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                )
+                    : (image != null
+                    ? ClipRRect(
+                  borderRadius: BorderRadius.circular(23),
+                  child: Image.file(image, fit: BoxFit.cover),
+                )
+                    : const Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.camera_enhance_outlined, size: 50, color: AppTheme.brown),
+                    SizedBox(height: 10),
+                    Text("Capture item for AI analysis", style: TextStyle(color: AppTheme.textGrey, fontWeight: FontWeight.w500)),
+                  ],
+                )),
               ),
-            )
-                : (image != null
-                ? ClipRRect(
-              borderRadius: BorderRadius.circular(23),
-              child: Image.file(image, fit: BoxFit.cover),
-            )
-                : const Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.camera_enhance_outlined, size: 50, color: AppTheme.brown),
-                SizedBox(height: 10),
-                Text("Capture item for AI analysis", style: TextStyle(color: AppTheme.textGrey, fontWeight: FontWeight.w500)),
-              ],
-            )),
-          ),
+            ),
+            if (image != null && !isAnalyzing)
+              Positioned(
+                top: 10,
+                right: 10,
+                child: GestureDetector(
+                  onTap: () => _clearImage(ref),
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.5),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.close, color: Colors.white, size: 20),
+                  ),
+                ),
+              ),
+          ],
         ),
       ],
     );
@@ -215,8 +246,27 @@ class AddDonationScreen extends ConsumerWidget {
 
     return Column(
       children: [
-        _buildSwitchTile("Is it torn or damaged?", isTorn, (val) => ref.read(isTornProvider.notifier).state = val),
-        _buildSwitchTile("Is it clean and ready?", isClean, (val) => ref.read(isCleanProvider.notifier).state = val),
+        _buildSwitchTile("Is it torn or damaged?", isTorn, (val) {
+          ref.read(isTornProvider.notifier).state = val;
+          if (val) {
+            ref.read(aiAcceptedProvider.notifier).state = false;
+            ref.read(aiReasonProvider.notifier).state = "Item is torn or damaged based on your selection.";
+          } else if (isClean) {
+            // Re-evaluate if it should be accepted if no longer torn and is clean
+            ref.read(aiAcceptedProvider.notifier).state = true;
+            ref.read(aiReasonProvider.notifier).state = "Item looks good for donation.";
+          }
+        }),
+        _buildSwitchTile("Is it clean and ready?", isClean, (val) {
+          ref.read(isCleanProvider.notifier).state = val;
+          if (!val) {
+            ref.read(aiAcceptedProvider.notifier).state = false;
+            ref.read(aiReasonProvider.notifier).state = "Item must be clean and ready for donation.";
+          } else if (!isTorn) {
+            ref.read(aiAcceptedProvider.notifier).state = true;
+            ref.read(aiReasonProvider.notifier).state = "Item looks good for donation.";
+          }
+        }),
         const SizedBox(height: 10),
         _buildDropdown("Usage Period", ref.watch(usageTimeProvider), ["Less than 1 year", "1-3 years", "More than 3 years"],
             (val) => ref.read(usageTimeProvider.notifier).state = val!),
@@ -230,11 +280,29 @@ class AddDonationScreen extends ConsumerWidget {
 
     return Column(
       children: [
-        _buildSwitchTile("Is it fresh and safe?", isFresh, (val) => ref.read(isFreshProvider.notifier).state = val),
+        _buildSwitchTile("Is it fresh and safe?", isFresh, (val) {
+          ref.read(isFreshProvider.notifier).state = val;
+          if (!val) {
+            ref.read(aiAcceptedProvider.notifier).state = false;
+            ref.read(aiReasonProvider.notifier).state = "Food must be fresh and safe for donation.";
+          } else if (ref.read(foodExpiryProvider) == "Valid") {
+            ref.read(aiAcceptedProvider.notifier).state = true;
+            ref.read(aiReasonProvider.notifier).state = "Item looks good for donation.";
+          }
+        }),
         _buildSwitchTile("Is it a cooked meal?", isCooked, (val) => ref.read(isCookedProvider.notifier).state = val),
         const SizedBox(height: 10),
         _buildDropdown("Expiry Status", ref.watch(foodExpiryProvider), ["Valid", "Expires Soon", "Expired"],
-            (val) => ref.read(foodExpiryProvider.notifier).state = val!),
+            (val) {
+          ref.read(foodExpiryProvider.notifier).state = val!;
+          if (val == "Expired") {
+            ref.read(aiAcceptedProvider.notifier).state = false;
+            ref.read(aiReasonProvider.notifier).state = "Expired food cannot be donated.";
+          } else if (isFresh) {
+            ref.read(aiAcceptedProvider.notifier).state = true;
+            ref.read(aiReasonProvider.notifier).state = "Item looks good for donation.";
+          }
+        }),
       ],
     );
   }
@@ -283,9 +351,7 @@ class AddDonationScreen extends ConsumerWidget {
     final XFile? pickedFile = await picker.pickImage(source: ImageSource.camera, imageQuality: 50);
 
     if (pickedFile != null) {
-      // إعادة تعيين القرار السابق
-      ref.read(aiAcceptedProvider.notifier).state = null;
-      ref.read(aiReasonProvider.notifier).state = "";
+      _resetDonationState(ref);
       ref.read(isAnalyzingProvider.notifier).state = true;
 
       final file = File(pickedFile.path);
@@ -302,6 +368,24 @@ class AddDonationScreen extends ConsumerWidget {
 
       ref.read(isAnalyzingProvider.notifier).state = false;
     }
+  }
+
+  void _clearImage(WidgetRef ref) {
+    _resetDonationState(ref);
+    ref.read(donationImageProvider.notifier).state = null;
+  }
+
+  void _resetDonationState(WidgetRef ref) {
+    ref.read(aiAcceptedProvider.notifier).state = null;
+    ref.read(aiReasonProvider.notifier).state = "";
+    ref.read(donationCategoryProvider.notifier).state = "Food";
+    ref.read(itemConditionProvider.notifier).state = "Good";
+    // Reset dynamic questions
+    ref.read(isTornProvider.notifier).state = false;
+    ref.read(isCleanProvider.notifier).state = true;
+    ref.read(isFreshProvider.notifier).state = true;
+    ref.read(isCookedProvider.notifier).state = false;
+    ref.read(foodExpiryProvider.notifier).state = "Valid";
   }
 
   /// بطاقة قرار الـ AI: مقبول ✅ أو مرفوض ❌
