@@ -79,8 +79,14 @@ class AddDonationScreen extends ConsumerWidget {
                         // 1. قسم التقاط الصورة والتحليل الذكي
                         _buildPhotoSection(ref, donationImage, isAnalyzing),
 
-                        // 2. قسم نتائج تحليل الـ AI (يظهر فقط بعد التقاط الصورة)
+                        // 2. نتيجة قرار الـ AI (تظهر بعد انتهاء التحليل)
                         if (donationImage != null && !isAnalyzing) ...[
+                          const SizedBox(height: 25),
+                          _buildAIDecisionCard(ref),
+                        ],
+
+                        // 3. تفاصيل إضافية تظهر فقط لو مقبول
+                        if (donationImage != null && !isAnalyzing && (ref.watch(aiAcceptedProvider) == true)) ...[
                           const SizedBox(height: 25),
                           _buildCategorySection(ref),
                           const SizedBox(height: 25),
@@ -91,8 +97,8 @@ class AddDonationScreen extends ConsumerWidget {
                         _buildDescription(),
                         const SizedBox(height: 40),
 
-                        // 3. زر الانتقال للخطوة التالية
-                        _buildGiveButton(context, ref, themeColor, donationImage, isAnalyzing),
+                        // 4. الأزرار
+                        _buildActionButtons(context, ref, themeColor, donationImage, isAnalyzing),
                       ],
                     ),
                   ),
@@ -277,19 +283,161 @@ class AddDonationScreen extends ConsumerWidget {
     final XFile? pickedFile = await picker.pickImage(source: ImageSource.camera, imageQuality: 50);
 
     if (pickedFile != null) {
+      // إعادة تعيين القرار السابق
+      ref.read(aiAcceptedProvider.notifier).state = null;
+      ref.read(aiReasonProvider.notifier).state = "";
       ref.read(isAnalyzingProvider.notifier).state = true;
+
       final file = File(pickedFile.path);
       ref.read(donationImageProvider.notifier).state = file;
 
-      // استخدام الـ AI الفعلي لتحليل الصورة
+      // تحليل الصورة بالـ AI لتحديد القرار (مؤقتاً، لا تُرفع الصورة)
       final aiService = ref.read(aiServiceProvider);
       final result = await aiService.analyzeDonationItem(file);
 
       ref.read(donationCategoryProvider.notifier).state = result['category']!;
       ref.read(itemConditionProvider.notifier).state = result['condition']!;
-      
+      ref.read(aiAcceptedProvider.notifier).state = result['accepted'] == 'true';
+      ref.read(aiReasonProvider.notifier).state = result['reason'] ?? '';
+
       ref.read(isAnalyzingProvider.notifier).state = false;
     }
+  }
+
+  /// بطاقة قرار الـ AI: مقبول ✅ أو مرفوض ❌
+  Widget _buildAIDecisionCard(WidgetRef ref) {
+    final accepted = ref.watch(aiAcceptedProvider);
+    final reason = ref.watch(aiReasonProvider);
+    final condition = ref.watch(itemConditionProvider);
+
+    if (accepted == null) return const SizedBox.shrink();
+
+    final isAccepted = accepted == true;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeOut,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: isAccepted
+            ? const Color(0xFFE8F5E9)  // أخضر فاتح
+            : const Color(0xFFFFEBEE),  // أحمر فاتح
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isAccepted ? const Color(0xFF43A047) : const Color(0xFFE53935),
+          width: 1.5,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                isAccepted ? Icons.check_circle_rounded : Icons.cancel_rounded,
+                color: isAccepted ? const Color(0xFF43A047) : const Color(0xFFE53935),
+                size: 28,
+              ),
+              const SizedBox(width: 10),
+              Text(
+                isAccepted ? "✅ Donation Accepted" : "❌ Donation Rejected",
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: isAccepted ? const Color(0xFF2E7D32) : const Color(0xFFC62828),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            "Condition: $condition",
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: AppTheme.textBlack),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            reason,
+            style: TextStyle(
+              fontSize: 13,
+              color: isAccepted ? const Color(0xFF388E3C) : const Color(0xFFB71C1C),
+              height: 1.4,
+            ),
+          ),
+          if (!isAccepted) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Icon(Icons.refresh, size: 16, color: AppTheme.brown),
+                const SizedBox(width: 6),
+                Text(
+                  "Try again with a different item.",
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                ),
+              ],
+            )
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// الأزرار: إما CONTINUE (لو مقبول) أو زر إعادة التصوير (لو مرفوض)
+  Widget _buildActionButtons(BuildContext context, WidgetRef ref, Color color,
+      File? image, bool isAnalyzing) {
+    final accepted = ref.watch(aiAcceptedProvider);
+    final selectedCategory = ref.watch(donationCategoryProvider);
+
+    // لو لسه ما صوّرش أو لسه بيحلل
+    if (image == null || isAnalyzing || accepted == null) {
+      return SizedBox(
+        width: double.infinity,
+        height: 60,
+        child: ElevatedButton(
+          onPressed: null,
+          child: const Text(
+            "CONTINUE",
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, letterSpacing: 1.2),
+          ),
+        ),
+      );
+    }
+
+    if (accepted == false) {
+      // مرفوض - زر إعادة المحاولة فقط
+      return SizedBox(
+        width: double.infinity,
+        height: 60,
+        child: OutlinedButton.icon(
+          icon: const Icon(Icons.camera_alt_outlined),
+          label: const Text(
+            "RETAKE PHOTO",
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 1.2),
+          ),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: AppTheme.brown,
+            side: const BorderSide(color: AppTheme.brown, width: 2),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          ),
+          onPressed: () => _pickImage(ref),
+        ),
+      );
+    }
+
+    // مقبول - زر الاستمرار
+    return SizedBox(
+      width: double.infinity,
+      height: 60,
+      child: ElevatedButton(
+        onPressed: () {
+          String finalStatus = _calculateStatus(ref);
+          context.push('/donation-details/$selectedCategory?status=$finalStatus');
+        },
+        child: const Text(
+          "CONTINUE",
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, letterSpacing: 1.2),
+        ),
+      ),
+    );
   }
 
   Widget _buildDescription() {
@@ -342,27 +490,6 @@ class AddDonationScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildGiveButton(BuildContext context, WidgetRef ref, Color color, File? image, bool isAnalyzing) {
-    final selectedCategory = ref.watch(donationCategoryProvider);
-
-    return SizedBox(
-      width: double.infinity,
-      height: 60,
-      child: ElevatedButton(
-        onPressed: (image == null || isAnalyzing)
-            ? null
-            : () {
-                // حساب الحالة النهائية (Status) بناءً على القواعد
-                String finalStatus = _calculateStatus(ref);
-                context.push('/donation-details/$selectedCategory?status=$finalStatus');
-              },
-        child: const Text(
-          "CONTINUE",
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, letterSpacing: 1.2),
-        ),
-      ),
-    );
-  }
 
   String _calculateStatus(WidgetRef ref) {
     final category = ref.read(donationCategoryProvider);

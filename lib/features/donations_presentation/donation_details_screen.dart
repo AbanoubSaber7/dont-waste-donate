@@ -6,8 +6,6 @@ import '../../../theme/app_theme.dart';
 import '../../data/models/donation.dart';
 import '../../data/repositories/donation_repository.dart';
 
-import '../../utils/donation_providers.dart';
-
 final donationRepoProvider = Provider((ref) => DonationRepository());
 
 class DonationDetailsScreen extends ConsumerStatefulWidget {
@@ -108,14 +106,7 @@ class _DonationDetailsScreenState extends ConsumerState<DonationDetailsScreen> {
     setState(() => _isSubmitting = true);
 
     try {
-      String? imageUrl;
-      final imageFile = ref.read(donationImageProvider);
-      
-      // رفع الصورة أولاً إذا كانت موجودة
-      if (imageFile != null) {
-        imageUrl = await ref.read(donationRepoProvider).uploadImage(imageFile);
-      }
-
+      // الصورة تُستخدم فقط للتحليل في الشاشة السابقة ولا تُخزَّن
       final donation = Donation(
         id: "", // Firestore generates ID
         userId: user.uid,
@@ -123,7 +114,7 @@ class _DonationDetailsScreenState extends ConsumerState<DonationDetailsScreen> {
         description: "${_notesController.text} (Quantity: ${_quantityController.text})",
         date: DateTime.now(),
         status: "pending",
-        imageUrl: imageUrl, // الرابط الحقيقي من Firebase Storage
+        imageUrl: null, // لا نرفع الصورة
       );
 
       await ref.read(donationRepoProvider).addDonation(donation);

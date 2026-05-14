@@ -28,7 +28,13 @@ class AIService {
       final content = [
         Content.multi([
           TextPart(
-              "Analyze this donation item. Identify the category (Food, Clothes, or Other) and assess its condition (New, Good, Damaged, or Not Safe). Return only a JSON-like format: {\"category\": \"...\", \"condition\": \"...\", \"reason\": \"...\"}"),
+              "You are a donation screening AI. Analyze this item image and decide whether it is acceptable for donation.\n\n"
+              "Rules:\n"
+              "- ACCEPT if the item is clean, intact, safe, and usable (New or Good condition).\n"
+              "- REJECT if the item is damaged, torn, expired, unsafe, spoiled, or unhygienic.\n\n"
+              "Identify the category (Food, Clothes, or Other) and condition (New, Good, Damaged, Not Safe).\n"
+              "Return ONLY this exact JSON format (no extra text):\n"
+              "{\"category\": \"...\", \"condition\": \"...\", \"accepted\": true/false, \"reason\": \"one sentence in English\"}"),
           DataPart('image/jpeg', imageBytes),
         ])
       ];
@@ -40,10 +46,14 @@ class AIService {
 
       final categoryMatch = RegExp(r'"category":\s*"([^"]+)"').firstMatch(text);
       final conditionMatch = RegExp(r'"condition":\s*"([^"]+)"').firstMatch(text);
+      final acceptedMatch = RegExp(r'"accepted":\s*(true|false)').firstMatch(text);
+      final reasonMatch = RegExp(r'"reason":\s*"([^"]+)"').firstMatch(text);
 
       return {
         "category": categoryMatch?.group(1) ?? "Other",
         "condition": conditionMatch?.group(1) ?? "Good",
+        "accepted": acceptedMatch?.group(1) ?? "true",
+        "reason": reasonMatch?.group(1) ?? "Item appears suitable for donation.",
       };
     } catch (e) {
       // ignore: avoid_print
@@ -51,6 +61,8 @@ class AIService {
       return const {
         "category": "Other",
         "condition": "Good",
+        "accepted": "true",
+        "reason": "Could not analyze item. Defaulting to accepted.",
       };
     }
   }
