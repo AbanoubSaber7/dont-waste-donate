@@ -28,13 +28,16 @@ class AIService {
       final content = [
         Content.multi([
           TextPart(
-              "You are a donation screening AI. Analyze this item image and decide whether it is acceptable for donation.\n\n"
+              "You are a professional donation screening AI for a multi-purpose charity app.\n"
+              "Your goal is to maximize helpful donations while ensuring safety.\n\n"
               "Rules:\n"
-              "- ACCEPT if the item is clean, intact, safe, and usable (New or Good condition).\n"
-              "- REJECT if the item is damaged, torn, expired, unsafe, spoiled, or unhygienic.\n\n"
-              "Identify the category (Food, Clothes, or Other) and condition (New, Good, Damaged, Not Safe).\n"
-              "Return ONLY this exact JSON format (no extra text):\n"
-              "{\"category\": \"...\", \"condition\": \"...\", \"accepted\": true/false, \"reason\": \"one sentence in English\"}"),
+              "- ACCEPT: Any item that is functional, clean, and useful (e.g., Electronics, Books, Clothes, Food, Tools).\n"
+              "- ACCEPT: If the condition is 'New' or 'Good', it MUST be accepted.\n"
+              "- REJECT: Only if the item is clearly broken beyond repair, extremely dirty, expired, or dangerous.\n\n"
+              "Identify Category: (Food, Clothes, Education, Health, or Shelter).\n"
+              "Identify Condition: (New, Good, Damaged).\n"
+              "Return ONLY JSON:\n"
+              "{\"category\": \"...\", \"condition\": \"...\", \"accepted\": true/false, \"reason\": \"one short sentence explaining why\"}"),
           DataPart('image/jpeg', imageBytes),
         ])
       ];

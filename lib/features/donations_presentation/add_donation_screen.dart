@@ -429,8 +429,8 @@ class AddDonationScreen extends ConsumerWidget {
       height: 60,
       child: ElevatedButton(
         onPressed: () {
-          String finalStatus = _calculateStatus(ref);
-          context.push('/donation-details/$selectedCategory?status=$finalStatus');
+          // بعد الموافقة، ننتقل مباشرة للخريطة للبحث عن أقرب جمعية
+          context.go('/search');
         },
         child: const Text(
           "CONTINUE",
